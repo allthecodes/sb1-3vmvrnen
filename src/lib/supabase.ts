@@ -1,13 +1,14 @@
 import { createClient } from '@supabase/supabase-js';
-import { logAuth } from './logging';
+import { logger } from './logging';
+import { LOG_CATEGORIES } from './logging/constants';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  logAuth('INIT', new Error('Missing environment variables'), {
+  logger.error(LOG_CATEGORIES.AUTH, 'Missing Supabase environment variables', undefined, {
     hasUrl: !!supabaseUrl,
-    hasKey: !!supabaseAnonKey,
+    hasKey: !!supabaseAnonKey
   });
   throw new Error('Missing Supabase environment variables');
 }
@@ -17,13 +18,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: true,
-    flowType: 'implicit',
     storage: localStorage
-  },
-  global: {
-    headers: {
-      'X-Client-Info': 'career-tracker-web'
-    }
   }
 });
 
@@ -40,12 +35,18 @@ export async function retryOperation<T>(
       return await operation();
     } catch (error) {
       lastError = error;
+      logger.warn(LOG_CATEGORIES.DATABASE, `Operation failed, attempt ${attempt + 1}/${maxRetries}`, {
+        error: error as Error,
+        nextRetryIn: delay * Math.pow(2, attempt)
+      });
+      
       if (attempt < maxRetries - 1) {
         await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, attempt)));
       }
     }
   }
   
+  logger.error(LOG_CATEGORIES.DATABASE, 'Operation failed after all retries', lastError);
   throw lastError;
 }
 
@@ -53,9 +54,16 @@ export async function retryOperation<T>(
 export async function checkSupabaseConnection(): Promise<boolean> {
   try {
     const { error } = await supabase.from('profiles').select('count', { count: 'exact', head: true });
-    return !error;
+    const isConnected = !error;
+    
+    logger.info(LOG_CATEGORIES.DATABASE, 'Connection check completed', {
+      isConnected,
+      error: error?.message
+    });
+    
+    return isConnected;
   } catch (err) {
-    console.error('Supabase connection error:', err);
+    logger.error(LOG_CATEGORIES.DATABASE, 'Connection check failed', err as Error);
     return false;
   }
 }

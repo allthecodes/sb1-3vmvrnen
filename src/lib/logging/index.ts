@@ -1,4 +1,4 @@
-export * from './logger';
+export { logger } from './logger';
 export * from './types';
 export * from './constants';
 export * from './performance';
